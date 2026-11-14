@@ -1,0 +1,32 @@
+{
+  "name": "overleaf-astra-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "On-demand Overleaf @bot with persistent Codex sessions, PDF context and reviewed edits",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts test/*.test.cjs",
+    "install:host": "node scripts/install.mjs",
+    "check": "npm run typecheck && npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "zod": "4.0.0",
+    "diff": "7.0.0",
+    "pdfjs-dist": "5.4.530"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/chrome": "^0.0.181",
+    "@types/diff": "^5.2.3",
+    "typescript": "^5.9.3",
+    "tsx": "^4.19.2",
+    "esbuild": "^0.27.2"
+  }
+}

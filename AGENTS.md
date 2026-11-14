@@ -1,0 +1,1 @@
+Use npm run typecheck, npm test and npm run build before delivery. Keep data and credentials out of Git. Browser access must stay project-scoped. No paper changes without an explicit user click. Preserve MIT attribution for adapted Ageaf code. Do not introduce background polling or permanent model processes.
