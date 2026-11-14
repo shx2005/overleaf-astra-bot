@@ -18,7 +18,7 @@ export function locateEdit(source: string, edit: ExactEdit, scope?: EditScope) {
       source.slice(scope.from, scope.from + scope.text.length) !== scope.text)
   )
     throw new Error(
-      "评论选区或文件已变化，请重新调用 @bot；不会改到其他位置。"
+      "评论对应的段落或文件已变化，请重新调用 @bot；不会改到其他位置。"
     );
   const start = scope?.from ?? 0;
   const end = scope ? start + scope.text.length : source.length;
@@ -28,7 +28,7 @@ export function locateEdit(source: string, edit: ExactEdit, scope?: EditScope) {
     const first = region.indexOf(edit.oldText);
     if (first < 0)
       throw new Error(
-        "修改超出评论选区或原文不匹配。只提交选区内目标句子的精确 oldText，不要包含整行或相邻句子。"
+        "修改超出目标段落或原文不匹配。可以调整该段内的句式，但不要包含相邻段落。"
       );
     if (region.indexOf(edit.oldText, first + 1) >= 0)
       throw new Error(
@@ -42,7 +42,7 @@ export function locateEdit(source: string, edit: ExactEdit, scope?: EditScope) {
     from + edit.oldText.length > end ||
     source.slice(from, from + edit.oldText.length) !== edit.oldText
   )
-    throw new Error("修改范围已失效或超出评论选区；请重新读取并生成建议。");
+    throw new Error("修改范围已失效或超出目标段落；请重新读取并生成建议。");
   return {
     ...edit,
     filePath,

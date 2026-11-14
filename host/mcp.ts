@@ -70,7 +70,7 @@ server.registerTool(
   "overleaf_propose_edit",
   {
     description:
-      "Stage a precise replacement for human review. Does NOT change the paper. Read the file first. Use only the requested sentence or smaller exact TeX span as oldText, never an entire line just because it holds a paragraph. Comment edits must be inside editableRange; surrounding text is read-only context. oldText must be unique within that range, or supply the exact UTF-16 character offset from. If the selection is insufficient, ask the user to select the intended sentence in a new comment. The user applies it with a trusted click after the task finishes.",
+      "Stage a precise replacement for human review. Does NOT change the paper. Read the file first. Use the smallest coherent exact replacement needed. The selected words mark the concern; comment editableRange is the containing TeX paragraph, so sentence restructuring is allowed within it. Other paragraphs are read-only context. oldText must be unique within that range, or supply the exact UTF-16 character offset from. Ask for another comment only if the change requires another paragraph. The user applies it with a trusted click after the task finishes.",
     inputSchema: {
       filePath: z.string().min(1),
       oldText: z.string().min(1),

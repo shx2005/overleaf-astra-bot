@@ -1,3 +1,4 @@
+import { ReviewDeck } from "./review-deck";
 import { reviewComment } from "./review-comment";
 import { presentContextUsage } from "./context-usage";
 import {
@@ -55,14 +56,21 @@ function browserCall(
     );
   });
 }
-function resultPanel() {
-  // Keep earlier answers and pending edits visible during feedback turns.
+let reviewDeck: ReviewDeck | undefined;
+let panelProject: string | undefined;
+function resultPanel(projectId: string) {
+  // Replace the previous round while preserving actionable cards in a single-card deck.
+  if (!reviewDeck || panelProject !== projectId) {
+    reviewDeck = new ReviewDeck();
+    panelProject = projectId;
+  }
+  const deck = reviewDeck;
   const container =
     document.getElementById("ageaf-bot-result") ??
     document.createElement("section");
   container.id = "ageaf-bot-result";
   const root = document.createElement("section");
-  container.append(root);
+  container.replaceChildren(root);
   container.style.cssText =
     "position:fixed;bottom:20px;right:20px;z-index:2147483647;width:440px;max-width:90vw;max-height:70vh;overflow:auto;background:#fff;color:#18242a;border:1px solid #becbc4;border-radius:12px;padding:18px;box-shadow:0 8px 36px #0003;font:14px/1.5 system-ui";
   const title = document.createElement("strong");
@@ -85,8 +93,11 @@ function resultPanel() {
   const output = document.createElement("div");
   output.style.whiteSpace = "pre-wrap";
   root.append(output);
-  const changes = document.createElement("div");
-  root.append(changes);
+  deck.onChange = (visible) => {
+    output.hidden = visible;
+  };
+  deck.beginRound();
+  root.append(deck.element);
   const close = document.createElement("button");
   close.textContent = "关闭结果";
   close.style.marginTop = "12px";
@@ -98,7 +109,7 @@ function resultPanel() {
   };
   root.append(close);
   document.body.append(container);
-  return { root, status, output, changes, usage };
+  return { root, status, output, deck, usage };
 }
 function showExtensionFailure(
   ui: ReturnType<typeof resultPanel>,
@@ -133,7 +144,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
   }
   const scopeId = trigger.scopeId ?? trigger.id;
   busy = true;
-  const ui = resultPanel();
+  const ui = resultPanel(trigger.projectId);
   let finished = false,
     finalText = "",
     proposalCount = 0;
@@ -181,7 +192,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
     if (message.type === "status") ui.status.textContent = message.text;
     if (message.type === "delta") {
       finalText += message.text;
-      ui.output.textContent = finalText;
+      ui.output.textContent = proposalCount ? "" : finalText;
     }
     if (message.type === "browser_request") {
       try {
@@ -256,6 +267,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
                 });
                 note.textContent = "拒绝决定已同步原评论／聊天。";
                 retry.remove();
+                ui.deck.resolve(card);
               } catch (error) {
                 note.textContent =
                   "拒绝已记录，评论同步未确认：" +
@@ -293,6 +305,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
               revise.remove();
               feedback.remove();
               submit.remove();
+              ui.deck.resolve(card);
             } catch (err) {
               deciding = false;
               accept.disabled = false;
@@ -383,7 +396,8 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
             );
           };
           card.append(accept, reject, revise, feedback, submit);
-          ui.changes.append(card);
+          ui.output.textContent = "";
+          ui.deck.add(card);
           result = {
             status: "pending_user_approval",
             proposalId: proposalCount,
@@ -417,12 +431,14 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
         console.warn("Could not clear delivered review records", error);
       }
       const suffix = proposalCount
-        ? `\n\n已生成 ${proposalCount} 处修改建议，尚未写入论文。请在本机的 @bot 结果框中逐条接受或拒绝。`
+        ? `\n\n已生成 ${proposalCount} 处修改建议，请在本机的 @bot 结果框中逐处审阅；只有点击接受的建议会写入论文。`
         : "";
       try {
         await browserCall(scopeId, "reply", { text: finalText + suffix });
         ui.status.textContent = "已回复原评论／聊天；后台已停止。";
       } catch (error) {
+        ui.output.hidden = false;
+        ui.output.textContent = finalText;
         ui.status.textContent =
           "模型已完成，但回复发送失败。结果保留在此：" +
           String((error as Error).message);

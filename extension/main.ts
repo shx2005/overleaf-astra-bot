@@ -333,15 +333,19 @@ async function runBrowserTool(
       );
       if (context.anchorAvailable) {
         context.selectedText.verified = true;
-        scope.editScope = { filePath, from: anchor.from, text: anchor.text };
-        context.editableRange = {
-          filePath,
-          from: anchor.from,
-          to: anchor.from + anchor.text.length,
-          text: anchor.text,
-          policy:
-            "Only this character range is editable. Surrounding paragraphs are reference only. If asked to change one sentence, propose only that sentence; never expand to the whole source line. If the requested edit needs text outside the selection, ask the user to select that text in a new comment.",
-        };
+        if (context.paragraph) {
+          scope.editScope = {
+            filePath,
+            from: context.paragraph.from,
+            text: context.paragraph.text,
+          };
+          context.editableRange = {
+            filePath,
+            ...context.paragraph,
+            policy:
+              "The selected words identify the user's concern. You may rewrite the sentence or structure within this containing TeX paragraph. Preserve other paragraphs and unrelated content. Follow any explicit narrower instruction. Prefer one coherent replacement for this request; never expand to another paragraph.",
+          };
+        }
       }
     } catch (error) {
       context.note = String((error as Error).message);
@@ -361,7 +365,7 @@ async function runBrowserTool(
   if (method === "validate_edit") {
     if (scope.threadId && !scope.editScope)
       throw new Error(
-        "评论没有可验证的原文选区，请选中要修改的句子重新评论；本次可讨论但不能修改。"
+        "评论没有可验证的目标段落，请在一个段落内选中关注的文字重新评论；本次可讨论但不能修改。"
       );
     const file = await runBrowserTool(jobId, "read_file", {
       filePath: args.filePath,

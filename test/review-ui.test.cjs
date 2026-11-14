@@ -16,17 +16,44 @@ function harness() {
     failSave = false,
     failReply = false;
   class Element {
-    constructor() {
+    constructor(tag = "div") {
+      this.tagName = tag;
       this.style = {};
       this.textContent = "";
+      this.children = [];
+      this.parentNode = null;
+      this.attributes = {};
       elements.push(this);
     }
-    append() {}
-    setAttribute() {}
-    remove() {}
+    append(...nodes) {
+      for (const node of nodes) {
+        node.remove();
+        this.children.push(node);
+        node.parentNode = this;
+      }
+    }
+    replaceChildren(...nodes) {
+      for (const node of [...this.children]) node.remove();
+      this.append(...nodes);
+    }
+    setAttribute(k, v) {
+      this.attributes[k] = v;
+    }
+    remove() {
+      if (this.parentNode)
+        this.parentNode.children = this.parentNode.children.filter(
+          (n) => n !== this
+        );
+      this.parentNode = null;
+    }
     focus() {}
     querySelector() {
       return null;
+    }
+    get isConnected() {
+      return (
+        this === context.document.body || Boolean(this.parentNode?.isConnected)
+      );
     }
   }
   const window = {
@@ -58,8 +85,9 @@ function harness() {
     exports: {},
     window,
     document: {
-      getElementById: () => null,
-      createElement: () => new Element(),
+      getElementById: (id) =>
+        elements.find((e) => e.id === id && e.isConnected) ?? null,
+      createElement: (tag) => new Element(tag),
       body: new Element(),
     },
     crypto: require("node:crypto").webcrypto,
@@ -87,6 +115,22 @@ function harness() {
       },
     },
     require(n) {
+      if (n.includes("review-deck")) {
+        const exports = {};
+        vm.runInNewContext(
+          ts.transpileModule(
+            fs.readFileSync("extension/review-deck.ts", "utf8"),
+            {
+              compilerOptions: {
+                module: ts.ModuleKind.CommonJS,
+                target: ts.ScriptTarget.ES2022,
+              },
+            }
+          ).outputText,
+          { exports, document: context.document }
+        );
+        return exports;
+      }
       if (n.includes("review-comment")) {
         const exports = {};
         vm.runInNewContext(
@@ -166,13 +210,29 @@ function harness() {
       context.chrome.runtime.id = undefined;
       context.chrome.storage = undefined;
     },
-    messages: () => elements.map((e) => e.textContent).join("\n"),
+    messages: () =>
+      elements
+        .filter((e) => e.isConnected)
+        .map((e) => e.textContent)
+        .join("\n"),
+    visibleCards: () =>
+      elements.filter((e) => e.tagName === "details" && e.isConnected).length,
+    panelRounds: () =>
+      context.document.getElementById("ageaf-bot-result")?.children.length ?? 0,
+    delta: async (text) => handler({ type: "delta", text }),
+    addProposal: async (newText = "new") =>
+      handler({
+        type: "browser_request",
+        id: "proposal-extra",
+        method: "propose_edit",
+        args: { filePath: "main.tex", oldText: "old", newText },
+      }),
     sent,
     calls,
     requests,
     setFailReply: (value) => (failReply = value),
     feedback: (text) => {
-      const e = elements.find((e) => e.placeholder);
+      const e = elements.find((e) => e.placeholder && e.isConnected);
       e.value = text;
     },
     setFailApply: (v) => (failApply = v),
@@ -181,14 +241,14 @@ function harness() {
       return connected;
     },
     click: async (text) => {
-      const e = elements.find((e) => e.textContent === text);
+      const e = elements.find((e) => e.isConnected && e.textContent === text);
       assert.ok(e, text);
       await e.onclick({ isTrusted: true });
     },
-    async proposal() {
+    async proposal(id = "turn") {
       await listeners.get("ageaf:bot:trigger")({
         detail: {
-          id: "turn",
+          id,
           projectId: "0123456789abcdef01234567",
           prompt: "edit",
         },
@@ -297,7 +357,7 @@ test("failed review publication can retry without recording or running the model
     h.requests.filter((r) => r.args.reviewId).at(-1).args.retry,
     true
   );
-  assert.match(h.messages(), /拒绝决定已同步/);
+  assert.equal(h.visibleCards(), 0);
 });
 test("context badge reports current usage and persists when the task completes", async () => {
   const h = harness();
@@ -312,4 +372,38 @@ test("context badge reports current usage and persists when the task completes",
   assert.match(h.messages(), /486.4k/);
   await h.done();
   assert.match(h.messages(), /420k/);
+});
+
+test("one work panel shows one suggestion at a time and advances after a decision", async () => {
+  const h = harness();
+  await h.proposal();
+  await h.addProposal("Second replacement");
+  await h.done();
+  assert.equal(h.panelRounds(), 1);
+  assert.equal(h.visibleCards(), 1);
+  assert.match(h.messages(), /当前修改 2 \/ 2/);
+  assert.match(h.messages(), /Second replacement/);
+  await h.click("上一处");
+  assert.equal(h.visibleCards(), 1);
+  assert.ok(!h.messages().includes("Second replacement"));
+  await h.click("拒绝");
+  assert.equal(h.visibleCards(), 1);
+  assert.match(h.messages(), /Second replacement/);
+  await h.click("接受修改");
+  assert.equal(h.visibleCards(), 0);
+  assert.match(h.messages(), /暂无待处理修改/);
+});
+test("new calls replace the previous round without discarding older pending suggestions", async () => {
+  const h = harness();
+  await h.proposal("first");
+  await h.delta("OLD ANSWER MUST NOT ACCUMULATE");
+  await h.done();
+  await h.proposal("second");
+  assert.equal(h.panelRounds(), 1);
+  assert.equal(h.visibleCards(), 1);
+  assert.match(h.messages(), /当前修改 2 \/ 2/);
+  assert.ok(!h.messages().includes("OLD ANSWER MUST NOT ACCUMULATE"));
+  await h.click("上一处");
+  await h.click("接受修改");
+  assert.equal(h.saved[0].proposalId, "first:1");
 });

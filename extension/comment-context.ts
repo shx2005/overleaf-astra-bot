@@ -1,3 +1,4 @@
+import { texParagraph } from "./paragraph";
 export type CommentAnchor = {
   threadId: string;
   docId: string;
@@ -66,11 +67,23 @@ export function documentBasename(docId: string): string | undefined {
       return p.name ?? p.entity.name;
   }
 }
+type SourceContext = {
+  filePath: string;
+  docId: string;
+  anchorAvailable: boolean;
+  note?: string;
+  anchor?: { text: string; from: number; to: number; line: number };
+  paragraph?: ReturnType<typeof texParagraph>;
+  section?: string[];
+  before?: string;
+  after?: string;
+  surroundingTextTruncated?: boolean;
+};
 export function sourceContext(
   source: string,
   anchor: CommentAnchor,
   filePath: string
-) {
+): SourceContext {
   // Stale offsets must never be silently replaced with an unrelated selection.
   if (
     !anchor.text ||
@@ -82,6 +95,11 @@ export function sourceContext(
       anchorAvailable: false,
       note: "Comment anchor is detached or no longer matches the live source.",
     };
+  const paragraph = texParagraph(
+    source,
+    anchor.from,
+    anchor.from + anchor.text.length
+  );
   const before = source.slice(0, anchor.from);
   const sections: { level: number; title: string }[] = [];
   const pattern =
@@ -105,17 +123,19 @@ export function sourceContext(
     sections.push({ level, title: match[2] });
   }
   // Include surrounding paragraphs, with explicit bounds for unusually long text.
-  const end = anchor.from + anchor.text.length;
-  const previous = before.lastIndexOf(
+  const end = paragraph?.to ?? anchor.from + anchor.text.length;
+  const contextFrom = paragraph?.from ?? anchor.from;
+  const beforeParagraph = source.slice(0, contextFrom);
+  const previous = beforeParagraph.lastIndexOf(
     "\n\n",
-    Math.max(0, before.lastIndexOf("\n\n") - 1)
+    Math.max(0, beforeParagraph.lastIndexOf("\n\n") - 1)
   );
   const next = source.indexOf("\n\n", end);
   const following = next < 0 ? source.length : source.indexOf("\n\n", next + 2);
   const start = Math.max(
     0,
     previous < 0 ? 0 : previous + 2,
-    anchor.from - 4000
+    contextFrom - 4000
   );
   const stop = Math.min(
     source.length,
@@ -129,11 +149,17 @@ export function sourceContext(
     anchor: {
       text: anchor.text,
       from: anchor.from,
-      to: end,
+      to: anchor.from + anchor.text.length,
       line: before.split("\n").length,
     },
+    paragraph,
+    ...(paragraph
+      ? {}
+      : {
+          note: "Selection crosses paragraph boundaries or is not a supported TeX paragraph. Select a focus within one paragraph.",
+        }),
     section: sections.map((s) => s.title),
-    before: source.slice(start, anchor.from),
+    before: source.slice(start, contextFrom),
     after: source.slice(end, stop),
     surroundingTextTruncated:
       start > (previous < 0 ? 0 : previous + 2) ||

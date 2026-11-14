@@ -10,6 +10,16 @@ vm.runInNewContext(
   }).outputText,
   { exports: exportsObject, URL }
 );
+const paragraphExports = {};
+vm.runInNewContext(
+  ts.transpileModule(fs.readFileSync("extension/paragraph.ts", "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText,
+  { exports: paragraphExports }
+);
 const parse = exportsObject.parseBotCommand;
 const origin = "https://www.overleaf.com",
   project = "0123456789abcdef01234567",
@@ -122,7 +132,7 @@ function harness(options = {}) {
             ),
             error: "File unavailable",
             activeName,
-            content: "old",
+            content: options.source ?? "old",
           },
         });
     },
@@ -148,14 +158,14 @@ function harness(options = {}) {
               },
             }
           ).outputText,
-          { exports, document }
+          { exports, document, require: () => paragraphExports }
         );
         if (options.comment && n.includes("comment-context")) {
           exports.anchorFromElement = () => ({
             docId: project,
             threadId: "draft",
-            from: 0,
-            text: "old",
+            from: options.anchor?.from ?? 0,
+            text: options.anchor?.text ?? "old",
             draft: true,
           });
           exports.documentBasename = () => activeName;
@@ -362,5 +372,38 @@ test("review retry checks the original thread and avoids posting an acknowledged
   assert.equal(
     h.network.filter((r) => r.init?.method === "POST").length,
     count
+  );
+});
+
+test("comment tool expands a selected word to its paragraph and rejects neighboring paragraphs", async () => {
+  const source =
+    "Previous paragraph.\n\nThis method is good. It has evidence.\n\nNext paragraph.";
+  const h = harness({
+    comment: true,
+    source,
+    anchor: { from: source.indexOf("good"), text: "good" },
+  });
+  h.input("@bot improve this word and sentence structure");
+  await h.post("@bot improve this word and sentence structure");
+  const id = h.events[0].detail.id;
+  const context = await h.call(id, "comment_context", {});
+  assert.equal(context.selectedText.text, "good");
+  assert.equal(
+    context.editableRange.text,
+    "This method is good. It has evidence."
+  );
+  const patch = await h.call(id, "validate_edit", {
+    filePath: "main.tex",
+    oldText: "This method is good.",
+    newText: "Evidence supports this method.",
+  });
+  assert.equal(patch.from, source.indexOf("This method"));
+  await assert.rejects(
+    h.call(id, "validate_edit", {
+      filePath: "main.tex",
+      oldText: "Next paragraph.",
+      newText: "Modified.",
+    }),
+    /超出目标段落/
   );
 });

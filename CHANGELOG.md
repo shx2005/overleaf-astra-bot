@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 — Unreleased
+
+- Treat selected words as the focus and the containing TeX paragraph as the editable scope, allowing sentence restructuring while keeping other paragraphs unchanged.
+- Replace stacked conversation panels with a single work panel and one visible suggestion; retain pending suggestions behind previous/next navigation and remove resolved cards.
+
 ## v1.0 — 2026-11-14
 
 First public release of the standalone Overleaf Astra Bot.
