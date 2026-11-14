@@ -7,6 +7,7 @@ export type BotTrigger = {
   threadId?: string;
   prompt: string;
   scopeId?: string;
+  feedbackReviewId?: string;
 };
 export function parseBotCommand(
   url: string,

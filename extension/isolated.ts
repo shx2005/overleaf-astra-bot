@@ -383,7 +383,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
             feedback.disabled = true;
             await publishReview(decision);
             busy = false;
-            const prompt = `上一处修改建议已被我拒绝。文件：${args.filePath}\n原文：${args.oldText}\n被拒绝的建议：${args.newText}\n我的下一步指令：${instruction}\n继续使用本项目的上下文，重新读取相关源文件，生成新的待确认建议。`;
+            const prompt = instruction;
             window.dispatchEvent(
               new CustomEvent(BOT_TRIGGER, {
                 detail: {
@@ -391,6 +391,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
                   id: crypto.randomUUID(),
                   scopeId,
                   prompt,
+                  feedbackReviewId: decision.id,
                 },
               })
             );

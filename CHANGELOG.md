@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 — Unreleased
+
+- Centralize academic editing instructions; remove duplicate range policies and conflicting approval-state reminders from task/context/tool prompts.
+- Preserve the paper language and scientific claim strength, use Chinese explanations by default, and finish after proposing edits instead of waiting for approval.
+- Send rejection feedback verbatim with a reference to its review event.
+- Add an opt-in real-model regression for English editing and accepted-state persistence.
+
 ## 1.0.1 — Unreleased
 
 - Treat selected words as the focus and the containing TeX paragraph as the editable scope, allowing sentence restructuring while keeping other paragraphs unchanged.

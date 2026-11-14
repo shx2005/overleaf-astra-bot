@@ -1,6 +1,6 @@
 # Overleaf Astra Bot
 
-当前源码／本机版本：**1.0.1**；最新正式发布为 **v1.0**。本次段落范围与单一工作面板改动已在 `main`，尚未包含在旧的 v1.0 安装包中。从 [GitHub Releases](https://github.com/shx2005/overleaf-astra-bot/releases/tag/v1.0) 下载完整安装包，解压后在目录内执行以下安装步骤。安装包包含源码与预构建的 `dist/extension`，本机仍需安装 Node.js 依赖并注册 Native Messaging 宿主。
+当前源码／本机版本：**1.0.2**；最新正式发布为 **v1.0**。段落范围、单一工作面板和提示词清理已在 `main`，尚未包含在旧的 v1.0 安装包中。从 [GitHub Releases](https://github.com/shx2005/overleaf-astra-bot/releases/tag/v1.0) 下载完整安装包，解压后在目录内执行以下安装步骤。安装包包含源码与预构建的 `dist/extension`，本机仍需安装 Node.js 依赖并注册 Native Messaging 宿主。
 
 在 Overleaf 评论或聊天里发送 `@bot 指令`，按需唤醒本机 Codex。每个项目维护一个持久会话；首次先读取整篇论文编译后的 PDF，后续指令延续同一上下文。修改正文前必须点击接受。
 
@@ -95,9 +95,13 @@ MCP 工具：`overleaf_list_files`、`overleaf_read_file`、`overleaf_read_selec
 npm run check
 ```
 
+固定编辑规则集中在 `host/prompts.ts`；`host/context.ts` 只组装本轮任务、单独的选中文字和上下文数据，MCP 描述只定义工具参数与结果。审阅状态依照事件和实时源码判断，正文语言与解释语言分开处理。
+
 `extension/` 是轻量网页入口和审阅界面；`host/` 管理 Codex、MCP、PDF 与持久会话；`scripts/` 负责构建与本机安装；`test/` 覆盖触发、防重、目标文件校验、会话隔离和锁、审阅决定同步及评论锚点校验。
 
 可选运行 `python3 scripts/smoke-session.py`，使用合成两页 PDF 验证真实 Astra 跨进程记忆和 MCP 恢复（会使用已登录账号的模型额度，需要 Codex 和 Poppler 位于 PATH，或配置上述环境变量）。
+
+可选运行 `python3 scripts/smoke-prompts.py`，在隔离的合成项目中验证真实 Astra 对中文润色请求保持英文正文与引用，以及接受状态跨轮次保留（会使用已登录账号的模型额度，不写入 Overleaf）。
 
 网页集成测试可以在独立、未共享的 Overleaf 测试项目里验证聊天触发、评论触发、PDF 初始化、跨进程会话恢复和拒绝反馈。不要在合写论文里发送测试消息。
 

@@ -319,7 +319,8 @@ test("reject with feedback saves the decision before starting the next project t
   assert.equal(starts.length, 2);
   assert.equal(starts[1].trigger.reviewEvents[0].id, h.saved[0].id);
   assert.equal(starts[1].trigger.projectId, starts[0].trigger.projectId);
-  assert.ok(starts[1].trigger.prompt.includes("Preserve the citation"));
+  assert.equal(starts[1].trigger.prompt, "Preserve the citation");
+  assert.equal(starts[1].trigger.feedbackReviewId, h.saved[0].id);
 });
 
 test("invalidated page resets busy state and offers refresh without starting native host", async () => {

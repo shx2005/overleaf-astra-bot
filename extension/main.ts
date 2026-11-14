@@ -342,8 +342,6 @@ async function runBrowserTool(
           context.editableRange = {
             filePath,
             ...context.paragraph,
-            policy:
-              "The selected words identify the user's concern. You may rewrite the sentence or structure within this containing TeX paragraph. Preserve other paragraphs and unrelated content. Follow any explicit narrower instruction. Prefer one coherent replacement for this request; never expand to another paragraph.",
           };
         }
       }
