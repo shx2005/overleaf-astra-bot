@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8 — Unreleased
+
+- Preserve the original Codex rollout working-directory identity through a compatibility symlink after moving project data into the application-owned directory.
+- Avoid thread write conflicts caused by resuming a persistent session under a different project cwd.
+
 ## 1.0.7 — Unreleased
 
 - Keep one Codex app-server and thread alive while a project queue drains, instead of resuming the same thread for every queued task.

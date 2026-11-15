@@ -15,6 +15,7 @@ import {
   readState,
   saveState,
   projectWorkspace,
+  legacyProjectDirectory,
   type ProjectState,
 } from "./session.js";
 import { validateReviews, newReviews } from "../extension/reviews.js";
@@ -228,9 +229,15 @@ async function start(trigger: any) {
     const projectDir = reuse
       ? activeProjectDir!
       : projectDirectory(trigger.projectId);
-    const cwd = projectWorkspace(projectDir);
+    const existingState = reuse ? activeState : readState(projectDir);
+    const legacyCwd = legacyProjectDirectory(trigger.projectId);
+    const cwd =
+      existingState?.codexCwd ??
+      (fs.existsSync(legacyCwd) && projectDir !== legacyCwd
+        ? legacyCwd
+        : projectWorkspace(projectDir));
     if (!reuse) unlock = lockProject(projectDir);
-    let state = reuse ? activeState! : readState(projectDir);
+    let state = existingState;
     contextUsage = { ...state?.contextUsage, compacting: false };
     send({ type: "context_usage", usage: contextUsage, cached: true });
     const reviews = validateReviews(trigger.reviewEvents, trigger.projectId);
@@ -353,12 +360,14 @@ async function start(trigger: any) {
         threadId,
         updatedAt: new Date().toISOString(),
       };
+      state.codexCwd = cwd;
       activeProjectId = trigger.projectId;
       activeProjectDir = projectDir;
       activeThreadId = threadId;
       activeState = state;
     }
     if (!state) throw new Error("Codex session state was not initialized");
+    state.codexCwd ??= cwd;
     if (pdfData) {
       if (!state.pdf || state.pdf.sha256 !== pdfData.sha256)
         state.pdf = {

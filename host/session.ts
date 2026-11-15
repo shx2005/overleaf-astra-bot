@@ -15,6 +15,7 @@ export type ProjectState = {
   reviewEventIds?: string[];
   reviewHistory?: import("../extension/reviews.js").ReviewEvent[];
   contextUsage?: ContextUsage;
+  codexCwd?: string;
   updatedAt: string;
 };
 export function defaultStateRoot() {
@@ -43,6 +44,12 @@ function migrateLegacyProject(projectId: string, target: string) {
   } catch {
     fs.cpSync(legacy, target, { recursive: true });
   }
+  try {
+    fs.symlinkSync(target, legacy, "dir");
+  } catch {}
+}
+export function legacyProjectDirectory(projectId: string) {
+  return path.join(os.homedir(), ".overleaf-astra-bot", "projects", projectId);
 }
 export function projectDirectory(projectId: string, root = defaultStateRoot()) {
   if (!/^[a-f0-9]{24}$/i.test(projectId))
@@ -50,6 +57,15 @@ export function projectDirectory(projectId: string, root = defaultStateRoot()) {
   const dir = path.join(root, "projects", projectId);
   if (root === defaultStateRoot()) migrateLegacyProject(projectId, dir);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (root === defaultStateRoot()) {
+    const legacy = legacyProjectDirectory(projectId);
+    if (!fs.existsSync(legacy)) {
+      fs.mkdirSync(path.dirname(legacy), { recursive: true, mode: 0o700 });
+      try {
+        fs.symlinkSync(dir, legacy, "dir");
+      } catch {}
+    }
+  }
   return dir;
 }
 export function projectWorkspace(dir: string) {
