@@ -41,6 +41,10 @@ let carry: Buffer = Buffer.alloc(0),
 let codex: CodexAppServer | null = null;
 let contextUsage: ContextUsage = {};
 let unlock: (() => void) | null = null;
+let activeProjectId: string | null = null;
+let activeProjectDir: string | null = null;
+let activeThreadId: string | null = null;
+let activeState: ProjectState | null = null;
 const pending = new Map<
   string,
   {
@@ -112,6 +116,10 @@ async function cleanupJob() {
   codex = null;
   unlock?.();
   unlock = null;
+  activeProjectId = null;
+  activeProjectDir = null;
+  activeThreadId = null;
+  activeState = null;
   broker.closeAllConnections();
   if (broker.listening) await new Promise<void>((r) => broker.close(() => r()));
 }
@@ -211,10 +219,18 @@ async function start(trigger: any) {
       trigger.prompt.length > 200000
     )
       throw new Error("Invalid command");
-    const projectDir = projectDirectory(trigger.projectId);
+    const reuse =
+      activeProjectId === trigger.projectId &&
+      !!codex &&
+      broker.listening &&
+      !!activeState &&
+      !!activeThreadId;
+    const projectDir = reuse
+      ? activeProjectDir!
+      : projectDirectory(trigger.projectId);
     const cwd = projectWorkspace(projectDir);
-    unlock = lockProject(projectDir);
-    let state = readState(projectDir);
+    if (!reuse) unlock = lockProject(projectDir);
+    let state = reuse ? activeState! : readState(projectDir);
     contextUsage = { ...state?.contextUsage, compacting: false };
     send({ type: "context_usage", usage: contextUsage, cached: true });
     const reviews = validateReviews(trigger.reviewEvents, trigger.projectId);
@@ -248,87 +264,101 @@ async function start(trigger: any) {
       send({ type: "status", text: "正在渲染 PDF 所有页面（仅图片）…" });
       pages = await preparePdf(pdfData.pdfPath, pdfData.target);
     }
-    send({
-      type: "status",
-      text: state ? "正在恢复本项目的 bot 会话…" : "正在创建本项目的 bot 会话…",
-    });
-    await new Promise<void>((resolve, reject) => {
-      broker.once("error", reject);
-      broker.listen(0, "127.0.0.1", resolve);
-    });
-    const address = broker.address();
-    if (!address || typeof address === "string")
-      throw new Error("MCP bridge failed");
-    const mcpPath = fileURLToPath(new URL("./mcp.ts", import.meta.url));
-    const configOverrides = [
-      "mcp_servers={}",
-      `mcp_servers.ageaf_overleaf.command=${JSON.stringify(process.execPath)}`,
-      `mcp_servers.ageaf_overleaf.args=${JSON.stringify([
-        "--import",
-        fileURLToPath(
-          new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url)
-        ),
-        mcpPath,
-      ])}`,
-      'mcp_servers.ageaf_overleaf.env_vars=["AGEAF_BOT_ENDPOINT","AGEAF_BOT_TOKEN"]',
-      "mcp_servers.ageaf_overleaf.tool_timeout_sec=35",
-      'mcp_servers.ageaf_overleaf.default_tools_approval_mode="approve"',
-      "agents.enabled=false",
-    ];
-    codex = new CodexAppServer({
-      cwd,
-      configOverrides,
-      cliPath: process.env.AGEAF_CODEX_CLI_PATH,
-      envVars: `AGEAF_BOT_ENDPOINT=http://127.0.0.1:${address.port}/tool\nAGEAF_BOT_TOKEN=${token}`,
-    });
-    await codex.ensureInitialized();
-    try {
-      const config = await codex.request(
-        "config/read",
-        { includeLayers: false, cwd },
-        { timeoutMs: 10000 }
-      );
-      if (!config.error && (config.result as any)?.config) {
-        contextUsage = usageWithConfig(
-          contextUsage,
-          (config.result as any).config
+    let threadId: string;
+    if (reuse) {
+      threadId = activeThreadId!;
+    } else {
+      send({
+        type: "status",
+        text: state
+          ? "正在恢复本项目的 bot 会话…"
+          : "正在创建本项目的 bot 会话…",
+      });
+      await new Promise<void>((resolve, reject) => {
+        broker.once("error", reject);
+        broker.listen(0, "127.0.0.1", resolve);
+      });
+      const address = broker.address();
+      if (!address || typeof address === "string")
+        throw new Error("MCP bridge failed");
+      const mcpPath = fileURLToPath(new URL("./mcp.ts", import.meta.url));
+      const configOverrides = [
+        "mcp_servers={}",
+        `mcp_servers.ageaf_overleaf.command=${JSON.stringify(
+          process.execPath
+        )}`,
+        `mcp_servers.ageaf_overleaf.args=${JSON.stringify([
+          "--import",
+          fileURLToPath(
+            new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url)
+          ),
+          mcpPath,
+        ])}`,
+        'mcp_servers.ageaf_overleaf.env_vars=["AGEAF_BOT_ENDPOINT","AGEAF_BOT_TOKEN"]',
+        "mcp_servers.ageaf_overleaf.tool_timeout_sec=35",
+        'mcp_servers.ageaf_overleaf.default_tools_approval_mode="approve"',
+        "agents.enabled=false",
+      ];
+      codex = new CodexAppServer({
+        cwd,
+        configOverrides,
+        cliPath: process.env.AGEAF_CODEX_CLI_PATH,
+        envVars: `AGEAF_BOT_ENDPOINT=http://127.0.0.1:${address.port}/tool\nAGEAF_BOT_TOKEN=${token}`,
+      });
+      await codex.ensureInitialized();
+      try {
+        const config = await codex.request(
+          "config/read",
+          { includeLayers: false, cwd },
+          { timeoutMs: 10000 }
         );
-        send({ type: "context_usage", usage: contextUsage, cached: true });
+        if (!config.error && (config.result as any)?.config) {
+          contextUsage = usageWithConfig(
+            contextUsage,
+            (config.result as any).config
+          );
+          send({ type: "context_usage", usage: contextUsage, cached: true });
+        }
+      } catch {
+        /* Usage display must not prevent a paper task from running. */
       }
-    } catch {
-      /* Usage display must not prevent a paper task from running. */
+      const params = {
+        model: "gpt-6-astra",
+        cwd,
+        approvalPolicy: "never",
+        sandbox: "read-only",
+        developerInstructions: EDITOR_INSTRUCTIONS,
+      };
+      const response = state
+        ? await resumeThreadWithRetry(
+            {
+              ...params,
+              threadId: state.threadId,
+              excludeTurns: true,
+            },
+            state.threadId
+          )
+        : await codex.request("thread/start", { ...params, ephemeral: false });
+      if (response.error)
+        throw new Error(
+          "无法恢复／创建会话：" + String((response.error as any).message)
+        );
+      threadId = (response.result as any)?.thread?.id;
+      if (!threadId) throw new Error("Codex did not return a thread ID");
+      if (state && state.threadId !== threadId)
+        throw new Error("Unexpected session replacement");
+      state ??= {
+        version: 1,
+        projectId: trigger.projectId,
+        threadId,
+        updatedAt: new Date().toISOString(),
+      };
+      activeProjectId = trigger.projectId;
+      activeProjectDir = projectDir;
+      activeThreadId = threadId;
+      activeState = state;
     }
-    const params = {
-      model: "gpt-6-astra",
-      cwd,
-      approvalPolicy: "never",
-      sandbox: "read-only",
-      developerInstructions: EDITOR_INSTRUCTIONS,
-    };
-    const response = state
-      ? await resumeThreadWithRetry(
-          {
-            ...params,
-            threadId: state.threadId,
-            excludeTurns: true,
-          },
-          state.threadId
-        )
-      : await codex.request("thread/start", { ...params, ephemeral: false });
-    if (response.error)
-      throw new Error(
-        "无法恢复／创建会话：" + String((response.error as any).message)
-      );
-    const threadId = (response.result as any)?.thread?.id;
-    if (!threadId) throw new Error("Codex did not return a thread ID");
-    if (state && state.threadId !== threadId)
-      throw new Error("Unexpected session replacement");
-    state ??= {
-      version: 1,
-      projectId: trigger.projectId,
-      threadId,
-      updatedAt: new Date().toISOString(),
-    };
+    if (!state) throw new Error("Codex session state was not initialized");
     if (pdfData) {
       if (!state.pdf || state.pdf.sha256 !== pdfData.sha256)
         state.pdf = {
@@ -384,7 +414,6 @@ async function start(trigger: any) {
     ].slice(-100);
     state.contextUsage = contextUsage;
     saveState(projectDir, state);
-    await cleanupJob();
     send({ type: "delta", text });
     send({
       type: "done",
@@ -397,10 +426,13 @@ async function start(trigger: any) {
   }
 }
 const queue = createSerialJobQueue(async (trigger: any) => {
+  if (activeProjectId && activeProjectId !== trigger.projectId)
+    await cleanupJob();
   currentJobId = trigger.id;
   send({ type: "queued_started", position: 0 });
   await start(trigger);
   currentJobId = null;
+  if (queue.size === 0) await cleanupJob();
 });
 process.stdin.on("data", (chunk: Buffer) => {
   const decoded = decodeNativeMessages(Buffer.concat([carry, chunk]));

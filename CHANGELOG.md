@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.7 — Unreleased
+
+- Keep one Codex app-server and thread alive while a project queue drains, instead of resuming the same thread for every queued task.
+- Prevent false `active write` failures caused by killing the worker immediately after each turn; retain bounded retry for genuinely external active writes.
+
 ## 1.0.6 — Unreleased
 
 - Retry `thread/resume` when Codex reports an active write instead of immediately failing a queued project task.
