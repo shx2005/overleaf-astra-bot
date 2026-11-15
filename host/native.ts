@@ -20,15 +20,22 @@ import { validateReviews, newReviews } from "../extension/reviews.js";
 import { pdfBatchInput, commandInput } from "./context.js";
 import { EDITOR_INSTRUCTIONS } from "./prompts.js";
 import { downloadPdf, preparePdf } from "./pdf.js";
+import { createSerialJobQueue } from "./job-queue.js";
 
 globalThis.console = new Console({
   stdout: process.stderr,
   stderr: process.stderr,
 });
+let currentJobId: string | null = null;
 const send = (message: Record<string, unknown>) =>
-  process.stdout.write(encodeNativeMessage(message));
+  process.stdout.write(
+    encodeNativeMessage(
+      currentJobId && message.jobId === undefined
+        ? { ...message, jobId: currentJobId }
+        : message
+    )
+  );
 let carry: Buffer = Buffer.alloc(0),
-  started = false,
   closed = false;
 let codex: CodexAppServer | null = null;
 let contextUsage: ContextUsage = {};
@@ -94,20 +101,24 @@ const broker = createServer(async (req, res) => {
       .end(JSON.stringify({ error: String((error as Error).message) }));
   }
 });
-async function cleanup() {
-  if (closed) return;
-  closed = true;
-  clearTimeout(deadline);
+async function cleanupJob() {
   for (const p of pending.values()) {
     clearTimeout(p.timer);
     p.reject(new Error("Task ended"));
   }
   pending.clear();
   await codex?.stop();
+  codex = null;
   unlock?.();
   unlock = null;
   broker.closeAllConnections();
   if (broker.listening) await new Promise<void>((r) => broker.close(() => r()));
+}
+async function cleanup() {
+  if (closed) return;
+  closed = true;
+  clearTimeout(deadline);
+  await cleanupJob();
 }
 const deadline = setTimeout(() => {
   void cleanup().finally(() => {
@@ -172,8 +183,6 @@ async function runTurn(threadId: string, input: object[]): Promise<string> {
   }
 }
 async function start(trigger: any) {
-  if (started) return;
-  started = true;
   try {
     if (
       typeof trigger?.prompt !== "string" ||
@@ -344,7 +353,7 @@ async function start(trigger: any) {
     ];
     state.contextUsage = contextUsage;
     saveState(cwd, state);
-    await cleanup();
+    await cleanupJob();
     send({ type: "delta", text });
     send({
       type: "done",
@@ -352,16 +361,25 @@ async function start(trigger: any) {
       ackReviewEventIds: reviews.map((event) => event.id),
     });
   } catch (error) {
-    await cleanup();
+    await cleanupJob();
     send({ type: "done", error: String((error as Error).message) });
   }
 }
+const queue = createSerialJobQueue(async (trigger: any) => {
+  currentJobId = trigger.id;
+  send({ type: "queued_started", position: 0 });
+  await start(trigger);
+  currentJobId = null;
+});
 process.stdin.on("data", (chunk: Buffer) => {
   const decoded = decodeNativeMessages(Buffer.concat([carry, chunk]));
   carry = decoded.carry as Buffer;
   for (const message of decoded.messages) {
     const m = message as any;
-    if (m.type === "start") void start(m.trigger);
+    if (m.type === "start") {
+      const position = queue.enqueue(m.trigger);
+      send({ type: "queued", jobId: m.trigger.id, position });
+    }
     if (m.type === "browser_response") {
       const p = pending.get(m.id);
       if (!p) continue;

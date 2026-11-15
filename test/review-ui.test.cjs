@@ -400,9 +400,9 @@ test("new calls replace the previous round without discarding older pending sugg
   await h.delta("OLD ANSWER MUST NOT ACCUMULATE");
   await h.done();
   await h.proposal("second");
-  assert.equal(h.panelRounds(), 1);
-  assert.equal(h.visibleCards(), 1);
-  assert.match(h.messages(), /当前修改 2 \/ 2/);
+  assert.equal(h.panelRounds(), 2);
+  assert.equal(h.visibleCards(), 2);
+  assert.match(h.messages(), /#second/);
   assert.ok(!h.messages().includes("OLD ANSWER MUST NOT ACCUMULATE"));
   await h.click("上一处");
   await h.click("接受修改");

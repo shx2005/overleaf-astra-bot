@@ -18,7 +18,6 @@ import {
   BOT_RESPONSE,
   type BotTrigger,
 } from "./protocol";
-let busy = false;
 const seen = new Set<string>();
 const pending = new Map<
   string,
@@ -56,25 +55,19 @@ function browserCall(
     );
   });
 }
-let reviewDeck: ReviewDeck | undefined;
-let panelProject: string | undefined;
-function resultPanel(projectId: string) {
-  // Replace the previous round while preserving actionable cards in a single-card deck.
-  if (!reviewDeck || panelProject !== projectId) {
-    reviewDeck = new ReviewDeck();
-    panelProject = projectId;
-  }
-  const deck = reviewDeck;
+function resultPanel(projectId: string, jobId: string) {
+  // One compact task card per request; each card owns one active suggestion deck.
+  const deck = new ReviewDeck();
   const container =
     document.getElementById("ageaf-bot-result") ??
     document.createElement("section");
   container.id = "ageaf-bot-result";
   const root = document.createElement("section");
-  container.replaceChildren(root);
+  container.append(root);
   container.style.cssText =
     "position:fixed;bottom:20px;right:20px;z-index:2147483647;width:440px;max-width:90vw;max-height:70vh;overflow:auto;background:#fff;color:#18242a;border:1px solid #becbc4;border-radius:12px;padding:18px;box-shadow:0 8px 36px #0003;font:14px/1.5 system-ui";
   const title = document.createElement("strong");
-  title.textContent = "@bot · GPT-6 Astra";
+  title.textContent = `@bot · GPT-6 Astra · #${jobId.slice(0, 8)}`;
   const header = document.createElement("div");
   header.style.cssText =
     "display:flex;align-items:flex-start;justify-content:space-between;gap:12px";
@@ -102,10 +95,8 @@ function resultPanel(projectId: string) {
   close.textContent = "关闭结果";
   close.style.marginTop = "12px";
   close.onclick = () => {
-    if (!busy) {
-      root.remove();
-      if (!container.childElementCount) container.remove();
-    }
+    root.remove();
+    if (!container.childElementCount) container.remove();
   };
   root.append(close);
   document.body.append(container);
@@ -136,15 +127,9 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
   if (!trigger?.id || seen.has(trigger.id)) return;
   seen.add(trigger.id);
   if (seen.size > 200) seen.delete(seen.values().next().value!);
-  if (busy) {
-    void browserCall(trigger.scopeId ?? trigger.id, "reply", {
-      text: "上一条指令仍在处理中，请完成后再发送 @bot。",
-    });
-    return;
-  }
   const scopeId = trigger.scopeId ?? trigger.id;
-  busy = true;
-  const ui = resultPanel(trigger.projectId);
+  let jobBusy = true;
+  const ui = resultPanel(trigger.projectId, trigger.id);
   let finished = false,
     finalText = "",
     proposalCount = 0;
@@ -156,7 +141,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
     port = chrome.runtime.connect({ name: "ageaf:bot" });
   } catch (error) {
     showExtensionFailure(ui, error, "任务未启动：");
-    busy = false;
+    jobBusy = false;
     return;
   }
   const cancel = document.createElement("button");
@@ -167,7 +152,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
   };
   const finish = () => {
     finished = true;
-    busy = false;
+    jobBusy = false;
     cancel.remove();
   };
   port.onDisconnect.addListener(() => {
@@ -178,6 +163,14 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
     }
   });
   port.onMessage.addListener(async (message) => {
+    if (message.type === "queued") {
+      ui.status.textContent = `已排队，前方还有 ${Math.max(
+        0,
+        Number(message.position ?? 1) - 1
+      )} 个任务…`;
+    }
+    if (message.type === "queued_started")
+      ui.status.textContent = "任务已开始…";
     if (message.type === "context_usage") {
       const display = presentContextUsage(message.usage, message.cached);
       ui.usage.textContent = display.label;
@@ -355,22 +348,14 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
             }
           };
           submit.onclick = async (e) => {
-            if (
-              !e.isTrusted ||
-              deciding ||
-              applied ||
-              busy ||
-              !feedback.value.trim()
-            )
+            if (!e.isTrusted || deciding || applied || !feedback.value.trim())
               return;
             deciding = true;
             const instruction = feedback.value.trim();
             let decision: ReviewEvent;
-            busy = true;
             try {
               decision = await record("rejected_with_feedback", instruction);
             } catch (error) {
-              busy = false;
               deciding = false;
               showExtensionFailure(ui, error, "本次审阅决定未保存：");
               return;
@@ -382,7 +367,6 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
             submit.textContent = "已拒绝并继续";
             feedback.disabled = true;
             await publishReview(decision);
-            busy = false;
             const prompt = instruction;
             window.dispatchEvent(
               new CustomEvent(BOT_TRIGGER, {

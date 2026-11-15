@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3 — Unreleased
+
+- Queue multiple `@bot` requests immediately per project instead of blocking later comments behind a page-wide busy flag.
+- Process one project conversation at a time in submission order, route each status/result back to its originating comment, and keep per-task work cards visible in the panel.
+- Preserve the existing source revalidation and human approval boundary for every queued proposal.
+
 ## 1.0.2 — Unreleased
 
 - Centralize academic editing instructions; remove duplicate range policies and conflicting approval-state reminders from task/context/tool prompts.
