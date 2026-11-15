@@ -14,6 +14,7 @@ import {
   lockProject,
   readState,
   saveState,
+  projectWorkspace,
   type ProjectState,
 } from "./session.js";
 import { validateReviews, newReviews } from "../extension/reviews.js";
@@ -190,9 +191,10 @@ async function start(trigger: any) {
       trigger.prompt.length > 200000
     )
       throw new Error("Invalid command");
-    const cwd = projectDirectory(trigger.projectId);
-    unlock = lockProject(cwd);
-    let state = readState(cwd);
+    const projectDir = projectDirectory(trigger.projectId);
+    const cwd = projectWorkspace(projectDir);
+    unlock = lockProject(projectDir);
+    let state = readState(projectDir);
     contextUsage = { ...state?.contextUsage, compacting: false };
     send({ type: "context_usage", usage: contextUsage, cached: true });
     const reviews = validateReviews(trigger.reviewEvents, trigger.projectId);
@@ -209,7 +211,7 @@ async function start(trigger: any) {
     let pages: Awaited<ReturnType<typeof preparePdf>> = [];
     if (!state?.pdf || state.pdf.completedPages < state.pdf.pages || refresh) {
       if (state?.pdf && !refresh) {
-        const target = path.join(cwd, "pdf", state.pdf.sha256);
+        const target = path.join(projectDir, "pdf", state.pdf.sha256);
         pdfData = {
           target,
           pdfPath: path.join(target, "paper.pdf"),
@@ -221,7 +223,7 @@ async function start(trigger: any) {
           type: "status",
           text: "首次初始化／更新：正在编译并读取整篇论文 PDF…",
         });
-        pdfData = await downloadPdf(cwd, browserCall);
+        pdfData = await downloadPdf(projectDir, browserCall);
       }
       send({ type: "status", text: "正在渲染 PDF 所有页面（仅图片）…" });
       pages = await preparePdf(pdfData.pdfPath, pdfData.target);
@@ -313,7 +315,7 @@ async function start(trigger: any) {
           compiledAt: pdfData.compiledAt,
         };
       state.contextUsage = contextUsage;
-      saveState(cwd, state);
+      saveState(projectDir, state);
       for (let i = state.pdf.completedPages; i < pages.length; i += 8) {
         const batch = pages.slice(i, i + 8);
         send({
@@ -326,11 +328,11 @@ async function start(trigger: any) {
         await runTurn(threadId, input);
         state.pdf.completedPages = i + batch.length;
         state.contextUsage = contextUsage;
-        saveState(cwd, state);
+        saveState(projectDir, state);
       }
     }
     state.contextUsage = contextUsage;
-    saveState(cwd, state);
+    saveState(projectDir, state);
     send({
       type: "status",
       text: "Astra 已恢复项目上下文，正在处理指令…",
@@ -358,7 +360,7 @@ async function start(trigger: any) {
       ...reviews.filter((event) => event.status === "accepted"),
     ].slice(-100);
     state.contextUsage = contextUsage;
-    saveState(cwd, state);
+    saveState(projectDir, state);
     await cleanupJob();
     send({ type: "delta", text });
     send({

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.5 — Unreleased
+
+- Move project PDF snapshots, renderings and session state into a dedicated per-project Overleaf Astra Bot data directory.
+- Give each project a separate Codex workspace and migrate legacy `~/.overleaf-astra-bot/projects/<id>` data on first access without deleting it on failure.
+
 ## 1.0.4 — Unreleased
 
 - Rebase stale comment anchors through accepted source replacements when the mapping is provable; otherwise keep the edit blocked and explain why.

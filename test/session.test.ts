@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   projectDirectory,
+  projectWorkspace,
+  defaultStateRoot,
   readState,
   saveState,
   lockProject,
@@ -32,6 +34,9 @@ test("one saved thread per project, with independent PDF progress and exclusive 
     second();
     const other = projectDirectory("1123456789abcdef01234567", root);
     assert.equal(readState(other), null);
+    const workspace = projectWorkspace(dir);
+    assert.equal(workspace, path.join(dir, "workspace"));
+    assert.notEqual(workspace, dir);
     assert.throws(() => projectDirectory("../outside", root));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -45,4 +50,10 @@ test("corrupt saved sessions fail visibly instead of starting a replacement", ()
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("default storage is application-owned and separated from the checkout", () => {
+  const root = defaultStateRoot();
+  assert.match(root, /Overleaf Astra Bot|overleaf-astra-bot/);
+  assert.ok(!root.endsWith("outputs/overleaf-astra-bot"));
 });

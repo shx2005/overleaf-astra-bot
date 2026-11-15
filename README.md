@@ -1,6 +1,6 @@
 # Overleaf Astra Bot
 
-当前源码／本机版本：**1.0.4**；最新正式发布为 **v1.0**。段落范围、单一工作面板、提示词清理和异步任务队列已在 `main`，尚未包含在旧的 v1.0 安装包中。从 [GitHub Releases](https://github.com/shx2005/overleaf-astra-bot/releases/tag/v1.0) 下载完整安装包，解压后在目录内执行以下安装步骤。安装包包含源码与预构建的 `dist/extension`，本机仍需安装 Node.js 依赖并注册 Native Messaging 宿主。
+当前源码／本机版本：**1.0.5**；最新正式发布为 **v1.0**。段落范围、单一工作面板、提示词清理和异步任务队列已在 `main`，尚未包含在旧的 v1.0 安装包中。从 [GitHub Releases](https://github.com/shx2005/overleaf-astra-bot/releases/tag/v1.0) 下载完整安装包，解压后在目录内执行以下安装步骤。安装包包含源码与预构建的 `dist/extension`，本机仍需安装 Node.js 依赖并注册 Native Messaging 宿主。
 
 在 Overleaf 评论或聊天里发送 `@bot 指令`，按需唤醒本机 Codex。每个项目维护一个持久会话；首次先读取整篇论文编译后的 PDF，后续指令延续同一上下文。修改正文前必须点击接受。
 
@@ -60,7 +60,7 @@ npm run install:host -- --extension-id=YOUR_CHROME_EXTENSION_ID
 
 ## 数据与会话
 
-- 项目索引、PDF、渲染页面保存在 `~/.overleaf-astra-bot/projects/<projectId>/`。
+- 项目状态、PDF 和渲染页面保存在独立的 Overleaf Astra Bot 数据目录：macOS 为 `~/Library/Application Support/Overleaf Astra Bot/projects/<projectId>/`，Linux 为 `~/.local/share/overleaf-astra-bot/projects/<projectId>/`。每个项目还有独立的 `workspace/` 作为 Codex 工作目录，不会把 PDF 和会话文件写进当前临时 Codex 项目。旧版 `~/.overleaf-astra-bot/projects/<projectId>/` 会在首次访问时自动迁移。
 - 待同步的审阅决定保存在 Chrome 扩展的本地存储中，刷新网页不会丢失；不会随代码上传 GitHub。
 - 图片模式只影响后续 PDF 初始化／刷新；升级不会清空已有对话，历史上已发送的 PDF 文字仍留在原会话中。
 - Codex 对话历史由 Codex 自身持久保存；`session.json` 记录项目到对话的映射与 PDF 初始化进度。

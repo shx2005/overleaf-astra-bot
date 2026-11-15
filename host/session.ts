@@ -17,16 +17,45 @@ export type ProjectState = {
   contextUsage?: ContextUsage;
   updatedAt: string;
 };
-export function projectDirectory(
-  projectId: string,
-  root = process.env.OVERLEAF_BOT_STATE_DIR ??
-    path.join(os.homedir(), ".overleaf-astra-bot")
-) {
+export function defaultStateRoot() {
+  if (process.env.OVERLEAF_BOT_STATE_DIR)
+    return process.env.OVERLEAF_BOT_STATE_DIR;
+  return process.platform === "darwin"
+    ? path.join(
+        os.homedir(),
+        "Library",
+        "Application Support",
+        "Overleaf Astra Bot"
+      )
+    : path.join(os.homedir(), ".local", "share", "overleaf-astra-bot");
+}
+function migrateLegacyProject(projectId: string, target: string) {
+  const legacy = path.join(
+    os.homedir(),
+    ".overleaf-astra-bot",
+    "projects",
+    projectId
+  );
+  if (fs.existsSync(target) || !fs.existsSync(legacy)) return;
+  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  try {
+    fs.renameSync(legacy, target);
+  } catch {
+    fs.cpSync(legacy, target, { recursive: true });
+  }
+}
+export function projectDirectory(projectId: string, root = defaultStateRoot()) {
   if (!/^[a-f0-9]{24}$/i.test(projectId))
     throw new Error("Invalid Overleaf project ID");
   const dir = path.join(root, "projects", projectId);
+  if (root === defaultStateRoot()) migrateLegacyProject(projectId, dir);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
+}
+export function projectWorkspace(dir: string) {
+  const workspace = path.join(dir, "workspace");
+  fs.mkdirSync(workspace, { recursive: true, mode: 0o700 });
+  return workspace;
 }
 export function readState(dir: string): ProjectState | null {
   const p = path.join(dir, "session.json");
