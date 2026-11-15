@@ -1,6 +1,6 @@
 # Overleaf Astra Bot
 
-当前源码／本机版本：**1.0.5**；最新正式发布为 **v1.0**。段落范围、单一工作面板、提示词清理和异步任务队列已在 `main`，尚未包含在旧的 v1.0 安装包中。从 [GitHub Releases](https://github.com/shx2005/overleaf-astra-bot/releases/tag/v1.0) 下载完整安装包，解压后在目录内执行以下安装步骤。安装包包含源码与预构建的 `dist/extension`，本机仍需安装 Node.js 依赖并注册 Native Messaging 宿主。
+当前源码／本机版本：**1.0.6**；最新正式发布为 **v1.0**。段落范围、单一工作面板、提示词清理和异步任务队列已在 `main`，尚未包含在旧的 v1.0 安装包中。从 [GitHub Releases](https://github.com/shx2005/overleaf-astra-bot/releases/tag/v1.0) 下载完整安装包，解压后在目录内执行以下安装步骤。安装包包含源码与预构建的 `dist/extension`，本机仍需安装 Node.js 依赖并注册 Native Messaging 宿主。
 
 在 Overleaf 评论或聊天里发送 `@bot 指令`，按需唤醒本机 Codex。每个项目维护一个持久会话；首次先读取整篇论文编译后的 PDF，后续指令延续同一上下文。修改正文前必须点击接受。
 

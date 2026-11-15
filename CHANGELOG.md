@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.6 — Unreleased
+
+- Retry `thread/resume` when Codex reports an active write instead of immediately failing a queued project task.
+- Surface the wait state and preserve the project session; do not reset or replace the thread.
+
 ## 1.0.5 — Unreleased
 
 - Move project PDF snapshots, renderings and session state into a dedicated per-project Overleaf Astra Bot data directory.

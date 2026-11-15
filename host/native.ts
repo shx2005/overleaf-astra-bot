@@ -127,6 +127,26 @@ const deadline = setTimeout(() => {
     process.exit(0);
   });
 }, 30 * 60 * 1000);
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+async function resumeThreadWithRetry(params: any, threadId: string) {
+  let delay = 1000;
+  for (let attempt = 0; attempt < 7; attempt++) {
+    const response = await codex!.request("thread/resume", params);
+    const message = String((response.error as any)?.message ?? "");
+    if (!response.error || !/active write/i.test(message)) return response;
+    send({
+      type: "status",
+      text: `项目会话正在被上一轮写入，等待释放（第 ${attempt + 1}/7 次重试）…`,
+      threadId,
+    });
+    await sleep(delay);
+    delay = Math.min(delay * 2, 16000);
+  }
+  throw new Error(
+    "项目会话仍被上一轮写入占用；请稍后再发送 @bot。已有会话不会被重置。"
+  );
+}
 async function runTurn(threadId: string, input: object[]): Promise<string> {
   let resolveTurn: (v: any) => void = () => {};
   const completion = new Promise<any>((resolve) => {
@@ -286,11 +306,14 @@ async function start(trigger: any) {
       developerInstructions: EDITOR_INSTRUCTIONS,
     };
     const response = state
-      ? await codex.request("thread/resume", {
-          ...params,
-          threadId: state.threadId,
-          excludeTurns: true,
-        })
+      ? await resumeThreadWithRetry(
+          {
+            ...params,
+            threadId: state.threadId,
+            excludeTurns: true,
+          },
+          state.threadId
+        )
       : await codex.request("thread/start", { ...params, ephemeral: false });
     if (response.error)
       throw new Error(

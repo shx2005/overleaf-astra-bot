@@ -1,6 +1,6 @@
 {
   "name": "overleaf-astra-bot",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "type": "module",
   "description": "On-demand Overleaf @bot with persistent Codex sessions, PDF context and reviewed edits",
