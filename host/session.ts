@@ -16,6 +16,7 @@ export type ProjectState = {
   reviewHistory?: import("../extension/reviews.js").ReviewEvent[];
   contextUsage?: ContextUsage;
   codexCwd?: string;
+  codexHome?: string;
   updatedAt: string;
 };
 export function defaultStateRoot() {
@@ -72,6 +73,22 @@ export function projectWorkspace(dir: string) {
   const workspace = path.join(dir, "workspace");
   fs.mkdirSync(workspace, { recursive: true, mode: 0o700 });
   return workspace;
+}
+export function projectCodexHome(dir: string) {
+  const home = path.join(dir, "codex");
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  // Keep login and model configuration available to the isolated runtime
+  // without sharing its rollout and writer-lock database with desktop Codex.
+  const sharedHome = path.join(os.homedir(), ".codex");
+  for (const name of ["auth.json", "config.toml"]) {
+    const source = path.join(sharedHome, name);
+    const target = path.join(home, name);
+    if (!fs.existsSync(source) || fs.existsSync(target)) continue;
+    try {
+      fs.symlinkSync(source, target);
+    } catch {}
+  }
+  return home;
 }
 export function readState(dir: string): ProjectState | null {
   const p = path.join(dir, "session.json");

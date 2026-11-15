@@ -15,6 +15,7 @@ import {
   readState,
   saveState,
   projectWorkspace,
+  projectCodexHome,
   legacyProjectDirectory,
   type ProjectState,
 } from "./session.js";
@@ -46,6 +47,7 @@ let activeProjectId: string | null = null;
 let activeProjectDir: string | null = null;
 let activeThreadId: string | null = null;
 let activeState: ProjectState | null = null;
+let idleCleanupTimer: NodeJS.Timeout | null = null;
 const pending = new Map<
   string,
   {
@@ -108,6 +110,10 @@ const broker = createServer(async (req, res) => {
   }
 });
 async function cleanupJob() {
+  if (idleCleanupTimer) {
+    clearTimeout(idleCleanupTimer);
+    idleCleanupTimer = null;
+  }
   for (const p of pending.values()) {
     clearTimeout(p.timer);
     p.reject(new Error("Task ended"));
@@ -136,26 +142,6 @@ const deadline = setTimeout(() => {
     process.exit(0);
   });
 }, 30 * 60 * 1000);
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-async function resumeThreadWithRetry(params: any, threadId: string) {
-  let delay = 1000;
-  for (let attempt = 0; attempt < 7; attempt++) {
-    const response = await codex!.request("thread/resume", params);
-    const message = String((response.error as any)?.message ?? "");
-    if (!response.error || !/active write/i.test(message)) return response;
-    send({
-      type: "status",
-      text: `项目会话正在被上一轮写入，等待释放（第 ${attempt + 1}/7 次重试）…`,
-      threadId,
-    });
-    await sleep(delay);
-    delay = Math.min(delay * 2, 16000);
-  }
-  throw new Error(
-    "项目会话仍被上一轮写入占用；请稍后再发送 @bot。已有会话不会被重置。"
-  );
-}
 async function runTurn(threadId: string, input: object[]): Promise<string> {
   let resolveTurn: (v: any) => void = () => {};
   const completion = new Promise<any>((resolve) => {
@@ -230,12 +216,17 @@ async function start(trigger: any) {
       ? activeProjectDir!
       : projectDirectory(trigger.projectId);
     const existingState = reuse ? activeState : readState(projectDir);
+    const codexHome = projectCodexHome(projectDir);
+    const resetThread = !!existingState && existingState.codexHome !== codexHome;
     const legacyCwd = legacyProjectDirectory(trigger.projectId);
-    const cwd =
+    const requestedCwd =
       existingState?.codexCwd ??
       (fs.existsSync(legacyCwd) && projectDir !== legacyCwd
         ? legacyCwd
         : projectWorkspace(projectDir));
+    const cwd = fs.existsSync(requestedCwd)
+      ? fs.realpathSync(requestedCwd)
+      : projectWorkspace(projectDir);
     if (!reuse) unlock = lockProject(projectDir);
     let state = existingState;
     contextUsage = { ...state?.contextUsage, compacting: false };
@@ -252,7 +243,12 @@ async function start(trigger: any) {
     );
     let pdfData: Awaited<ReturnType<typeof downloadPdf>> | null = null;
     let pages: Awaited<ReturnType<typeof preparePdf>> = [];
-    if (!state?.pdf || state.pdf.completedPages < state.pdf.pages || refresh) {
+    if (
+      resetThread ||
+      !state?.pdf ||
+      state.pdf.completedPages < state.pdf.pages ||
+      refresh
+    ) {
       if (state?.pdf && !refresh) {
         const target = path.join(projectDir, "pdf", state.pdf.sha256);
         pdfData = {
@@ -310,7 +306,7 @@ async function start(trigger: any) {
         cwd,
         configOverrides,
         cliPath: process.env.AGEAF_CODEX_CLI_PATH,
-        envVars: `AGEAF_BOT_ENDPOINT=http://127.0.0.1:${address.port}/tool\nAGEAF_BOT_TOKEN=${token}`,
+        envVars: `AGEAF_BOT_ENDPOINT=http://127.0.0.1:${address.port}/tool\nAGEAF_BOT_TOKEN=${token}\nCODEX_HOME=${codexHome}`,
       });
       await codex.ensureInitialized();
       try {
@@ -336,15 +332,12 @@ async function start(trigger: any) {
         sandbox: "read-only",
         developerInstructions: EDITOR_INSTRUCTIONS,
       };
-      const response = state
-        ? await resumeThreadWithRetry(
-            {
-              ...params,
-              threadId: state.threadId,
-              excludeTurns: true,
-            },
-            state.threadId
-          )
+      const response = state && !resetThread
+        ? await codex.request("thread/resume", {
+            ...params,
+            threadId: state.threadId,
+            excludeTurns: true,
+          })
         : await codex.request("thread/start", { ...params, ephemeral: false });
       if (response.error)
         throw new Error(
@@ -352,14 +345,20 @@ async function start(trigger: any) {
         );
       threadId = (response.result as any)?.thread?.id;
       if (!threadId) throw new Error("Codex did not return a thread ID");
-      if (state && state.threadId !== threadId)
+      if (state && !resetThread && state.threadId !== threadId)
         throw new Error("Unexpected session replacement");
+      if (resetThread) {
+        contextUsage = {};
+        if (state?.pdf) state.pdf.completedPages = 0;
+      }
       state ??= {
         version: 1,
         projectId: trigger.projectId,
         threadId,
         updatedAt: new Date().toISOString(),
       };
+      state.threadId = threadId;
+      state.codexHome = codexHome;
       state.codexCwd = cwd;
       activeProjectId = trigger.projectId;
       activeProjectDir = projectDir;
@@ -367,7 +366,11 @@ async function start(trigger: any) {
       activeState = state;
     }
     if (!state) throw new Error("Codex session state was not initialized");
-    state.codexCwd ??= cwd;
+    // Store the canonical path after the legacy data-directory migration. A
+    // symlink path can otherwise make the same Codex thread look like it has
+    // two different workspaces after the extension reconnects.
+    state.codexCwd = cwd;
+    state.codexHome = codexHome;
     if (pdfData) {
       if (!state.pdf || state.pdf.sha256 !== pdfData.sha256)
         state.pdf = {
@@ -441,7 +444,16 @@ const queue = createSerialJobQueue(async (trigger: any) => {
   send({ type: "queued_started", position: 0 });
   await start(trigger);
   currentJobId = null;
-  if (queue.size === 0) await cleanupJob();
+  if (queue.size === 0) {
+    // Keep the app-server alive briefly after a turn. This lets the next
+    // queued/nearby comment reuse the loaded thread instead of killing the
+    // writer and immediately trying to resume the same thread in a new
+    // process. There is no user-facing retry or wait state.
+    idleCleanupTimer = setTimeout(() => {
+      idleCleanupTimer = null;
+      if (queue.size === 0) void cleanupJob();
+    }, 60_000);
+  }
 });
 process.stdin.on("data", (chunk: Buffer) => {
   const decoded = decodeNativeMessages(Buffer.concat([carry, chunk]));
@@ -449,6 +461,10 @@ process.stdin.on("data", (chunk: Buffer) => {
   for (const message of decoded.messages) {
     const m = message as any;
     if (m.type === "start") {
+      if (idleCleanupTimer) {
+        clearTimeout(idleCleanupTimer);
+        idleCleanupTimer = null;
+      }
       const position = queue.enqueue(m.trigger);
       send({ type: "queued", jobId: m.trigger.id, position });
     }

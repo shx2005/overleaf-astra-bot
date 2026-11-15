@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.9 — Unreleased
+
+- Remove the user-facing active-writer retry loop. Project tasks continue through the existing serial queue without a fake waiting state.
+- Give every project an isolated `CODEX_HOME` under its application-owned data directory, while reusing the local Codex auth and model configuration through symlinks.
+- Migrate sessions created before the isolated runtime to a fresh project-local thread and replay the cached PDF image context once.
+- Keep the project worker alive briefly after a turn so nearby comments reuse the loaded thread before idle cleanup.
+
 ## 1.0.8 — Unreleased
 
 - Preserve the original Codex rollout working-directory identity through a compatibility symlink after moving project data into the application-owned directory.
