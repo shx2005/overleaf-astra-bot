@@ -9,6 +9,7 @@ import {
   anchorFromElement,
   findThreadAnchor,
   documentBasename,
+  rebaseAnchor,
   sourceContext,
   type CommentAnchor,
 } from "./comment-context";
@@ -327,9 +328,26 @@ async function runBrowserTool(
       context.filePath = filePath;
       context.selectedText.filePath = filePath;
       const file = await runBrowserTool(jobId, "read_file", { filePath });
+      const rebased = rebaseAnchor(
+        String(file.content),
+        anchor,
+        args.reviewHistory ?? [],
+        filePath
+      );
+      const effectiveAnchor = rebased.ok && rebased.anchor ? rebased.anchor : anchor;
+      context.rebase = rebased.ok
+        ? {
+            applied: rebased.changed,
+            reason: rebased.changed
+              ? "Comment anchor followed accepted edits."
+              : undefined,
+          }
+        : { applied: false, reason: rebased.reason };
+      context.selectedText.currentText = effectiveAnchor.text;
+      context.selectedText.rebased = Boolean(rebased.ok && rebased.changed);
       Object.assign(
         context,
-        sourceContext(String(file.content), anchor, filePath)
+        sourceContext(String(file.content), effectiveAnchor, filePath)
       );
       if (context.anchorAvailable) {
         context.selectedText.verified = true;

@@ -216,6 +216,7 @@ window.addEventListener(BOT_TRIGGER, async (event: Event) => {
               filePath: args.filePath,
               oldText: args.oldText,
               newText: args.newText,
+              from: args.from,
               feedback,
               at: new Date().toISOString(),
             };

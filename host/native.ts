@@ -198,7 +198,9 @@ async function start(trigger: any) {
     const reviews = validateReviews(trigger.reviewEvents, trigger.projectId);
     const undelivered = newReviews(reviews, state?.reviewEventIds);
     const commentContext = trigger.threadId
-      ? await browserCall("comment_context", {})
+      ? await browserCall("comment_context", {
+          reviewHistory: state?.reviewHistory ?? [],
+        })
       : undefined;
     const refresh = /^(?:更新|刷新|重新读取)\s*PDF\b/i.test(
       trigger.prompt.trim()
@@ -351,6 +353,10 @@ async function start(trigger: any) {
         ...reviews.map((event) => event.id),
       ]),
     ];
+    state.reviewHistory = [
+      ...(state.reviewHistory ?? []),
+      ...reviews.filter((event) => event.status === "accepted"),
+    ].slice(-100);
     state.contextUsage = contextUsage;
     saveState(cwd, state);
     await cleanupJob();

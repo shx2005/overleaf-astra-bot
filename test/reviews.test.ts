@@ -17,6 +17,7 @@ const event = (id: string, projectId = project): ReviewEvent => ({
   filePath: "main.tex",
   oldText: "old",
   newText: "new",
+  from: 12,
   at: "2026-11-14T01:00:00Z",
 });
 test("decisions persist per project; acknowledgement only removes delivered events", async () => {

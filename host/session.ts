@@ -13,6 +13,7 @@ export type ProjectState = {
     compiledAt: string;
   };
   reviewEventIds?: string[];
+  reviewHistory?: import("../extension/reviews.js").ReviewEvent[];
   contextUsage?: ContextUsage;
   updatedAt: string;
 };

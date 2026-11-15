@@ -79,6 +79,81 @@ type SourceContext = {
   after?: string;
   surroundingTextTruncated?: boolean;
 };
+
+export type AcceptedPatch = {
+  filePath: string;
+  from?: number;
+  oldText: string;
+  newText: string;
+  at: string;
+};
+export function rebaseAnchor(
+  source: string,
+  anchor: CommentAnchor,
+  patches: AcceptedPatch[] = [],
+  filePath: string
+) {
+  let from = anchor.from;
+  let text = anchor.text;
+  let delta = 0;
+  let changed = false;
+  for (const patch of [...patches].sort((a, b) => a.at.localeCompare(b.at))) {
+    if (
+      patch.filePath !== filePath ||
+      !Number.isSafeInteger(patch.from) ||
+      !patch.oldText
+    )
+      continue;
+    const pFrom = patch.from! + delta;
+    const pTo = pFrom + patch.oldText.length;
+    const end = from + text.length;
+    if (pTo <= from) {
+      from += patch.newText.length - patch.oldText.length;
+      changed = true;
+    } else if (pFrom < end && pTo > from) {
+      const relative = patch.oldText.indexOf(text);
+      const replacementContainsSelection =
+        relative >= 0 && patch.newText.includes(text);
+      if (
+        text === patch.oldText ||
+        (relative >= 0 && replacementContainsSelection)
+      ) {
+        from =
+          pFrom +
+          (replacementContainsSelection ? patch.newText.indexOf(text) : 0);
+        if (text === patch.oldText && !replacementContainsSelection)
+          text = patch.newText;
+        changed = true;
+      } else {
+        return {
+          ok: false,
+          reason:
+            "Accepted edits overlap the old comment selection, but the new text has no provable matching anchor.",
+        };
+      }
+    }
+    delta += patch.newText.length - patch.oldText.length;
+  }
+  if (source.slice(from, from + text.length) !== text) {
+    const hits: number[] = [];
+    let at = source.indexOf(text);
+    while (at >= 0) {
+      hits.push(at);
+      at = source.indexOf(text, at + Math.max(1, text.length));
+    }
+    if (hits.length === 1) {
+      from = hits[0];
+      changed = true;
+    } else
+      return {
+        ok: false,
+        reason:
+          "The comment anchor no longer matches live source and accepted edits do not identify a unique replacement.",
+      };
+  }
+  return { ok: true, anchor: { ...anchor, from, text }, changed };
+}
+
 export function sourceContext(
   source: string,
   anchor: CommentAnchor,

@@ -9,6 +9,7 @@ export type ReviewEvent = {
   newText: string;
   feedback?: string;
   at: string;
+  from?: number;
 };
 export const reviewKey = (projectId: string, id: string) =>
   `overleaf-bot:review:${projectId}:${id}`;
@@ -61,6 +62,7 @@ export function validateReviews(
       typeof e.newText !== "string" ||
       typeof e.at !== "string" ||
       !Number.isFinite(Date.parse(e.at)) ||
+      (e.from !== undefined && (!Number.isSafeInteger(e.from) || e.from < 0)) ||
       (e.feedback !== undefined && typeof e.feedback !== "string") ||
       (e.status === "rejected_with_feedback" && !e.feedback?.trim())
     )
@@ -76,6 +78,7 @@ export function validateReviews(
       newText: e.newText,
       feedback: e.feedback,
       at: e.at,
+      from: e.from,
     };
   });
 }

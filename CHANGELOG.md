@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4 — Unreleased
+
+- Rebase stale comment anchors through accepted source replacements when the mapping is provable; otherwise keep the edit blocked and explain why.
+- Persist accepted edit ranges in project history for future comment relocation.
+
 ## 1.0.3 — Unreleased
 
 - Queue multiple `@bot` requests immediately per project instead of blocking later comments behind a page-wide busy flag.

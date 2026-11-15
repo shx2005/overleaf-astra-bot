@@ -64,3 +64,92 @@ test("an anchor inside the section heading still includes that section", () => {
   );
   assert.deepEqual(result.section, ["Introduction Test"]);
 });
+
+test("rebases a stale comment after an accepted edit before it", async () => {
+  const { rebaseAnchor } = await import("../extension/comment-context.js");
+  const source = "Before changed sentence.\n\nTarget sentence remains.";
+  const anchor = { ...base, from: 25, text: "Target sentence remains." };
+  const result = rebaseAnchor(
+    source,
+    anchor,
+    [
+      {
+        filePath: "main.tex",
+        from: 0,
+        oldText: "Before sentence.",
+        newText: "Before changed sentence.",
+        at: "2026-11-14T01:00:00Z",
+      },
+    ],
+    "main.tex"
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.changed, true);
+  assert.equal(result.anchor?.from, source.indexOf("Target"));
+  assert.equal(
+    source.slice(
+      result.anchor!.from,
+      result.anchor!.from + result.anchor!.text.length
+    ),
+    result.anchor!.text
+  );
+});
+test("rebases a selection contained in an accepted sentence replacement when the selected words survive", async () => {
+  const { rebaseAnchor } = await import("../extension/comment-context.js");
+  const source = "Evidence supports this method.";
+  const anchor = { ...base, from: 5, text: "method" };
+  const result = rebaseAnchor(
+    source,
+    anchor,
+    [
+      {
+        filePath: "main.tex",
+        from: 0,
+        oldText: "This method is good.",
+        newText: "Evidence supports this method.",
+        at: "2026-11-14T01:00:00Z",
+      },
+    ],
+    "main.tex"
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.anchor?.text, "method");
+  assert.equal(
+    source.slice(result.anchor!.from, result.anchor!.from + 6),
+    "method"
+  );
+});
+test("does not guess when an accepted replacement destroys the selected anchor", async () => {
+  const { rebaseAnchor } = await import("../extension/comment-context.js");
+  const result = rebaseAnchor(
+    "new phrase.",
+    { ...base, from: 0, text: "old word" },
+    [
+      {
+        filePath: "main.tex",
+        from: 0,
+        oldText: "old word",
+        newText: "new phrase",
+        at: "2026-11-14T01:00:00Z",
+      },
+    ],
+    "main.tex"
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.anchor?.text, "new phrase");
+  const failed = rebaseAnchor(
+    "Different.",
+    { ...base, from: 0, text: "old word" },
+    [
+      {
+        filePath: "main.tex",
+        from: 0,
+        oldText: "old word",
+        newText: "new phrase",
+        at: "2026-11-14T01:00:00Z",
+      },
+    ],
+    "main.tex"
+  );
+  assert.equal(failed.ok, false);
+});
